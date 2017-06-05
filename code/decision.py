@@ -73,3 +73,5 @@ def decision_step(Rover):
     
     return Rover
 
+def is_stuck(Rover):
+    if Rover.vel == 0 and Rover.throttle != 0 
