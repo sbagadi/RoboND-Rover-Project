@@ -20,7 +20,7 @@ import time
 # Import functions for perception and decision making
 from perception import perception_step
 from decision import decision_step
-from supporting_functions import update_rover, create_output_images
+from supporting_functions import update_rover, create_output_images,distance_between
 # Initialize socketio server and Flask application 
 # (learn more at: https://python-socketio.readthedocs.io/en/latest/)
 sio = socketio.Server()
@@ -39,6 +39,7 @@ ground_truth_3d = np.dstack((ground_truth*0, ground_truth*255, ground_truth*0)).
 class RoverState():
     def __init__(self):
         self.start_time = None # To record the start time of navigation
+        self.start_pos = None
         self.total_time = None # To record total duration of naviagation
         self.img = None # Current camera image
         self.pos = None # Current position (x, y)
@@ -56,10 +57,17 @@ class RoverState():
         self.rock_angles = None # Angles of rock object
         self.rock_dists = None # Distances of rock object
         ####
+
+        self.stuck_yaw = None
         
         self.ground_truth = ground_truth_3d # Ground truth worldmap
-        self.mode = 'forward' # Current mode (can be forward or stop)
-        self.throttle_set = 0.5 # Throttle setting when accelerating
+        self.mode = 'forward' # Current mode (can be forward or stop), need other modes?
+        self.throttle_set = 0.35 # Throttle setting when accelerating
+        self.throttle_one_eighth = 0.125
+        self.throttle_quarter = 0.25
+        self.throttle_three_quarters = 0.75
+        self.throttle_crawl = 0.15
+        self.throttle_full = 1.0
         self.brake_set = 10 # Brake setting when braking
         # The stop_forward and go_forward fields below represent total count
         # of navigable terrain pixels.  This is a very crude form of knowing
@@ -67,7 +75,8 @@ class RoverState():
         # get creative in adding new fields or modifying these!
         self.stop_forward = 50 # Threshold to initiate stopping
         self.go_forward = 500 # Threshold to go forward again
-        self.max_vel = 2 # Maximum velocity (meters/second)
+        self.max_vel = 1.6 # Maximum velocity (meters/second)
+        self.rock_approach_vel = 0.5
         # Image output from perception step
         # Update this image to display your intermediate analysis steps
         # on screen in autonomous mode
@@ -77,12 +86,33 @@ class RoverState():
         # obstacles and rock samples
         self.worldmap = np.zeros((200, 200, 3), dtype=np.float) 
         self.samples_pos = None # To store the actual sample positions
+        self.current_sample_pos = None # To store the position of the sample currently being collected
         self.samples_to_find = 0 # To store the initial count of samples
         self.samples_found = 0 # To count the number of samples found
         self.near_sample = 0 # Will be set to telemetry value data["near_sample"]
         self.picking_up = 0 # Will be set to telemetry value data["picking_up"]
         self.send_pickup = False # Set to True to trigger rock pickup
-# Initialize our rover 
+
+        self.robot_arm_thresh_bottom = (85, 10, -1)
+        self.robot_arm_thresh_top = (125, 30, 5)
+
+        self.stuck_frames = 0
+        self.unstuck_frames = 0
+        self.low_forward_frames = 0
+        self.zero_vel_frames = 0
+        self.max_steer_frames = 0
+        self.try_home_frames = 0
+        self.dance_frames = 0
+        self.increment = True
+        self.distance_to_start = 0
+
+        self.ready_for_home = False
+
+        self.recover_yaw = None
+        self.recover_pos = None
+
+
+# Initialize our rover
 Rover = RoverState()
 
 # Variables to track frames per second (FPS)
@@ -96,9 +126,8 @@ fps = None
 # Define telemetry function for what to do with incoming data
 @sio.on('telemetry')
 def telemetry(sid, data):
-
     global frame_counter, second_counter, fps
-    frame_counter+=1
+    frame_counter += 1
     # Do a rough calculation of frames per second (FPS)
     if (time.time() - second_counter) > 1:
         fps = frame_counter
@@ -121,14 +150,21 @@ def telemetry(sid, data):
             out_image_string1, out_image_string2 = create_output_images(Rover)
 
             # The action step!  Send commands to the rover!
-            commands = (Rover.throttle, Rover.brake, Rover.steer)
-            send_control(commands, out_image_string1, out_image_string2)
- 
+
+            # Don't send both of these, they both trigger the simulator
+            # to send back new telemetry so we must only send one
+            # back in respose to the current telemetry data.
+
             # If in a state where want to pickup a rock send pickup command
             if Rover.send_pickup and not Rover.picking_up:
                 send_pickup()
                 # Reset Rover flags
                 Rover.send_pickup = False
+            else:
+                # Send commands to the rover!
+                commands = (Rover.throttle, Rover.brake, Rover.steer)
+                send_control(commands, out_image_string1, out_image_string2)
+
         # In case of invalid telemetry, send null commands
         else:
 
@@ -146,6 +182,7 @@ def telemetry(sid, data):
     else:
         sio.emit('manual', data={}, skip_sid=True)
 
+
 @sio.on('connect')
 def connect(sid, environ):
     print("connect ", sid)
@@ -156,22 +193,25 @@ def connect(sid, environ):
         sample_data,
         skip_sid=True)
 
+
 def send_control(commands, image_string1, image_string2):
     # Define commands to be sent to the rover
-    data={
+    data = {
         'throttle': commands[0].__str__(),
         'brake': commands[1].__str__(),
         'steering_angle': commands[2].__str__(),
         'inset_image1': image_string1,
         'inset_image2': image_string2,
-        }
+    }
     # Send commands via socketIO server
     sio.emit(
         "data",
         data,
         skip_sid=True)
     eventlet.sleep(0)
-# Define a function to send the "pickup" command 
+
+
+# Define a function to send the "pickup" command
 def send_pickup():
     print("Picking up")
     pickup = {}
@@ -180,6 +220,8 @@ def send_pickup():
         pickup,
         skip_sid=True)
     eventlet.sleep(0)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Remote Driving')
     parser.add_argument(
@@ -190,8 +232,8 @@ if __name__ == '__main__':
         help='Path to image folder. This is where the images from the run will be saved.'
     )
     args = parser.parse_args()
-    
-    #os.system('rm -rf IMG_stream/*')
+
+    # os.system('rm -rf IMG_stream/*')
     if args.image_folder != '':
         print("Creating image folder at {}".format(args.image_folder))
         if not os.path.exists(args.image_folder):
@@ -202,7 +244,7 @@ if __name__ == '__main__':
         print("Recording this run ...")
     else:
         print("NOT recording this run ...")
-    
+
     # wrap Flask application with socketio's middleware
     app = socketio.Middleware(sio, app)
 

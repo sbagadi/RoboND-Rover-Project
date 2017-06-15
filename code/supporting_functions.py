@@ -50,7 +50,7 @@ def update_rover(Rover, data):
       # Update number of rocks found
       Rover.samples_found = Rover.samples_to_find - np.int(data["sample_count"])
 
-      print('speed =',Rover.vel, 'position =', Rover.pos, 'throttle =', 
+      print('mode = ', Rover.mode, 'speed =', Rover.vel, 'position =', Rover.pos, 'throttle =',
       Rover.throttle, 'steer_angle =', Rover.steer, 'near_sample:', Rover.near_sample, 
       'picking_up:', data["picking_up"], 'sending pickup:', Rover.send_pickup, 
       'total time:', Rover.total_time, 'samples remaining:', data["sample_count"], 
@@ -133,6 +133,18 @@ def create_output_images(Rover):
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
       cv2.putText(map_add,"Rocks: "+str(Rover.samples_found), (0, 55), 
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
+      sample_dist = 'None'
+      if Rover.current_sample_pos is not None:
+            sample_dist = distance_between(Rover.current_sample_pos, Rover.pos)
+
+      mean_dist = 'None'
+      if Rover.rock_dists is not None:
+            mean_dist = np.mean(Rover.rock_dists)
+
+      cv2.putText(map_add,"low_frwd: "+str(Rover.low_forward_frames), (0, 70),
+                  cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
+      cv2.putText(map_add,"go_frwd: "+str(Rover.go_forward), (0, 85),
+                  cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
 
       # Convert map and vision image to base64 strings for sending to server
       pil_img = Image.fromarray(map_add.astype(np.uint8))
@@ -147,5 +159,5 @@ def create_output_images(Rover):
 
       return encoded_string1, encoded_string2
 
-
-
+def distance_between(position_a, position_b):
+    return np.sqrt((position_a[0] - position_b[0])**2 + (position_a[1] - position_b[1])**2)
