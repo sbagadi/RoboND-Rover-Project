@@ -30,6 +30,8 @@ def color_thresh(img, rgb_thresh=(160, 160, 160)):
 threshed = color_thresh(warped)
 ```
  
+**Figure**: Original and threshed images.
+
 ![Threshed Image](images/threshed.png)
  
 Then I applied a Binary ones complement to invert the image to find the
@@ -68,6 +70,8 @@ def color_range(img, rgb_thresh_bottom=(135, 100, -1), \
     return color_select
 ```
  
+ **Figure**: Thresholded image of the rock sample.
+
 ![Threshed Rock Image](images/rock_threshed.png)
  
 ### Mapping the world
@@ -93,6 +97,8 @@ transformed image.
 warped = perspect_transform(img, source, destination)
 ```
  
+**Figure**: Warped image.
+
 ![Warped Image](images/warped.png)
  
 Then, I used the `color_thresh()` function to obtain the navigable/obstacle
