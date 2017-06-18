@@ -133,17 +133,8 @@ def create_output_images(Rover):
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
       cv2.putText(map_add,"Rocks: "+str(Rover.samples_found), (0, 55), 
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
-      sample_dist = 'None'
-      if Rover.current_sample_pos is not None:
-            sample_dist = distance_between(Rover.current_sample_pos, Rover.pos)
 
-      mean_dist = 'None'
-      if Rover.rock_dists is not None:
-            mean_dist = np.mean(Rover.rock_dists)
-
-      cv2.putText(map_add,"low_frwd: "+str(Rover.low_forward_frames), (0, 70),
-                  cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
-      cv2.putText(map_add,"go_frwd: "+str(Rover.go_forward), (0, 85),
+      cv2.putText(map_add,"Home: "+str(Rover.distance_to_start), (0, 70),
                   cv2.FONT_HERSHEY_COMPLEX, 0.4, (255, 255, 255), 1)
 
       # Convert map and vision image to base64 strings for sending to server

@@ -93,12 +93,9 @@ class RoverState():
         self.picking_up = 0 # Will be set to telemetry value data["picking_up"]
         self.send_pickup = False # Set to True to trigger rock pickup
 
-        self.robot_arm_thresh_bottom = (85, 10, -1)
-        self.robot_arm_thresh_top = (125, 30, 5)
-
-        self.stuck_frames = 0
-        self.unstuck_frames = 0
-        self.low_forward_frames = 0
+        self.stuck_frames = 0  # Number of frames the rover is stuck.
+        self.unstuck_frames = 0  # Number of frames the rover is in circling pattern
+        self.low_forward_frames = 0  # Number of frames the rover is
         self.zero_vel_frames = 0
         self.max_steer_frames = 0
         self.try_home_frames = 0

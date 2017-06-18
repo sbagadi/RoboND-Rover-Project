@@ -11,6 +11,7 @@ def decision_step(Rover):
     # Here you're all set up with some basic functionality but you'll need to
     # improve on this decision tree to do a good job of navigating autonomously!
 
+    # We are home, lets dance.
     if Rover.mode == 'home_dance':
         # We are home, lets dance
         if Rover.vel > 0:
@@ -35,45 +36,36 @@ def decision_step(Rover):
     
     # Check if we have vision of a rock and make decisions
     if Rover.rock_angles is not None and len(Rover.rock_angles) > 1:
-        # Rover.mode = 'stop'
         # Begin stopping
         if Rover.mode != 'pickup':
             Rover.throttle = 0
             Rover.brake = 3
             Rover.steer = 0
             Rover.mode = 'pickup'
-            # Rover.recover_yaw = Rover.yaw
-            # Rover.recover_pos = Rover.pos
 
-    # # Count the number of frames we are stopped and get ourselves un-stuck if we are not moving for some reason.
-    # if not Rover.picking_up and Rover.vel == 0:
-    #     Rover.zero_vel_frames += 1
-    #     if Rover.zero_vel_frames > 1000:
-    #         Rover.mode = 'stuck'
-    #         Rover.brake = 0
-    #         Rover.steer = 0
-    #         Rover.throttle = 0
-    # else:
-    #     Rover.zero_vel_frames = 0
-
+    # We are getting unstuck going home.
     if Rover.try_home_frames > 0:
         Rover.try_home_frames -= 1
+        # We have tried to get unstuck for a while, try to get to home again.
+        if Rover.try_home_frames <= 0:
+            Rover.mode = 'home'
 
+    # Some times the rover might get stuck in a corner with no way to go out, so reduce the number of forward pixels
+    # to find a way out.
     if Rover.mode == 'unstuck' or Rover.mode == 'stop':
-        print(Rover.mode)
         Rover.unstuck_frames += 1
         if Rover.unstuck_frames > 500:
             Rover.go_forward = 100
     else:
         Rover.unstuck_frames = 0
 
+    # Reset the go_forward threshold.
     if Rover.go_forward == 100:
         Rover.low_forward_frames += 1
         if Rover.low_forward_frames >= 500:
             Rover.go_forward = 500
     else:
         Rover.low_forward_frames = 0
-
 
     # The Rover might go in circles when in a wide open area, this is to safe guard against that.
     if Rover.mode == 'forward' \
@@ -89,7 +81,8 @@ def decision_step(Rover):
             Rover.stuck_yaw = Rover.yaw
     else:
         Rover.max_steer_frames = 0
-        
+
+    # Set the starting position.
     if Rover.start_pos is None:
         Rover.start_pos = Rover.pos
         Rover.recover_pos = Rover.pos
@@ -99,9 +92,7 @@ def decision_step(Rover):
         distance_to_start = distance_between(Rover.pos, Rover.start_pos)
         Rover.distance_to_start = distance_to_start
         map_filled = np.count_nonzero(Rover.worldmap)
-        # if distance_to_start > 10:
-        #     Rover.mode = 'home'
-        if not Rover.mode == 'unstuck' and map_filled > 7000 and distance_to_start < 10:
+        if not Rover.mode == 'unstuck' and map_filled > 7000 and distance_to_start < 5:
             Rover.ready_for_home = True
             if Rover.try_home_frames <= 0:
                 Rover.mode = 'home'
@@ -119,7 +110,7 @@ def decision_step(Rover):
                 Rover.stuck_yaw = Rover.yaw
                 Rover.mode = 'unstuck'
                 if Rover.ready_for_home:
-                    Rover.try_home_frames = 600
+                    Rover.try_home_frames = 500
         else:
             Rover.stuck_frames = 0
 
@@ -135,7 +126,7 @@ def decision_step(Rover):
                 else: # Else coast
                     Rover.throttle = 0
                 Rover.brake = 0
-                # Set steering to average angle clipped to the range +/- 15
+                # Set steering to (average + 14) angle clipped to the range +/- 15
                 Rover.steer = np.clip(np.mean(Rover.nav_angles * 180/np.pi) + 14, -15, 15)
             # If there's a lack of navigable terrain pixels then go to 'stop' mode
             elif len(Rover.nav_angles) < Rover.stop_forward:
@@ -172,12 +163,14 @@ def decision_step(Rover):
                     Rover.steer = np.clip(np.mean(Rover.nav_angles * 180/np.pi), -15, 15)
                     Rover.mode = 'forward'
         elif Rover.mode == 'pickup':
+            # If not picking up, send pickup.
             if Rover.vel == 0 and not Rover.picking_up and Rover.near_sample:
                 Rover.send_pickup = True
-            if Rover.picking_up:
+            if Rover.picking_up:  # Confirmed pickup, set mode to forward.
                 Rover.mode = 'forward'
                 Rover.current_sample_pos = None
             else:
+                # If we see the rock, go towards it.
                 if Rover.rock_angles is not None and len(Rover.rock_angles) > 1:
                     rock_distance = np.mean(Rover.rock_dists)
                     if Rover.near_sample:
@@ -201,6 +194,7 @@ def decision_step(Rover):
                         Rover.steer = np.clip(np.mean(Rover.rock_angles * 180/np.pi) - 10, -15, 15)
                         Rover.brake = 0
                 elif Rover.current_sample_pos is not None:
+                    # We dont see the rock, but know its position, turn towards it to see it.
                     rock_distance = distance_between(Rover.current_sample_pos, Rover.pos)
                     target_yaw = np.arctan2(int(Rover.current_sample_pos[1]) - (int(Rover.pos[1])),
                                     int(Rover.current_sample_pos[0]) - (int(Rover.pos[0])))
@@ -261,51 +255,14 @@ def decision_step(Rover):
                     Rover.current_sample_pos = None
                     Rover.mode = 'forward'
         elif Rover.mode == 'unstuck':
+            # Uh oh, we are stuck, rotate to find a way out.
             Rover.throttle = 0
             Rover.brake = 0
             Rover.steer = - 15
             if abs(Rover.yaw - Rover.stuck_yaw) > 10:
                 Rover.mode = 'stop'
-        elif Rover.mode == 'recover':
-            target_yaw = np.arctan2(int(Rover.recover_pos[1]) - (int(Rover.pos[1])),
-                                    int(Rover.recover_pos[0]) - (int(Rover.pos[0])))
-            target_distance = distance_between(Rover.recover_pos, Rover.pos)
-            if target_yaw < 0:
-                target_yaw += np.pi * 2
-
-            target_yaw = target_yaw * 180/np.pi
-            print(Rover.pos, Rover.recover_pos)
-            print('target_yaw = ', target_yaw, '; Rover.yaw = ', Rover.yaw)
-            if abs(target_yaw - Rover.yaw) > 5:
-                if Rover.vel > 0:
-                    Rover.throttle = 0
-                    Rover.brake = Rover.brake_set
-                    Rover.steer = 0
-                else:
-                    Rover.steer = -5
-                    Rover.brake = 0
-                    Rover.throttle = 0
-            else:
-                Rover.steer = 0
-                if target_distance < 1:
-                    if Rover.vel > 0:
-                        Rover.throttle = 0
-                        Rover.brake = Rover.brake_set
-                        Rover.steer = 0
-                    elif abs(Rover.recover_yaw - Rover.yaw) > 5:
-                        Rover.steer = -5
-                        Rover.brake = 0
-                        Rover.throttle = 0
-                    else:
-                        Rover.steer = 0
-                        Rover.brake = 0
-                        Rover.throttle = 0
-                        Rover.mode = 'stop'
-                else:
-                    Rover.brake = 0
-                    Rover.throttle = Rover.throttle_quarter
-
         elif Rover.mode == 'home':
+            # We are all done here, lets get home.
             target_yaw = np.arctan2(int(Rover.start_pos[1]) - (int(Rover.pos[1])),
                                     int(Rover.start_pos[0]) - (int(Rover.pos[0])))
             if target_yaw < 0:
@@ -315,6 +272,7 @@ def decision_step(Rover):
 
             yaw_diff = target_yaw - Rover.yaw
 
+            # We are almost looking at the destination, go towards it.
             if abs(yaw_diff) <= 5 or abs(yaw_diff) >= 355:
                 # Move towards target
                 if Rover.distance_to_start < 1:
@@ -327,6 +285,7 @@ def decision_step(Rover):
                     Rover.brake = 0
                     Rover.throttle = Rover.throttle_quarter
             else:
+                # Stop and turn towards the target.
                 if Rover.vel > 0:
                     Rover.steer = 0
                     Rover.throttle = 0
@@ -345,7 +304,6 @@ def decision_step(Rover):
                     Rover.throttle = 0
                     Rover.brake = Rover.brake = 0
 
-
     # Just to make the rover do something 
     # even if no modifications have been made to the code
     else:
@@ -359,5 +317,7 @@ def decision_step(Rover):
     
     return Rover
 
+
+# Checks if the rover is stuck.
 def is_stuck(Rover):
     return not Rover.picking_up and Rover.vel < 0.1 and Rover.throttle != 0

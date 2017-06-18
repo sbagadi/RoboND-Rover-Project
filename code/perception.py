@@ -20,7 +20,7 @@ def color_thresh(img, rgb_thresh=(160, 160, 160)):
     return color_select
 
 # Identify pixels in range.
-# Threshold of 120 < R < 220, 100 < G < 180 and -1 < B < 90 does a nice job of identifying rock samples
+# Threshold of 135 < R < 200, 100 < G < 180 and -1 < B < 40 does a nice job of identifying rock samples
 def color_range(img, rgb_thresh_bottom=(135, 100, -1), rgb_thresh_top=(200, 180, 40)):
     # Create an array of zeros same xy size as img, but single channel
     color_select = np.zeros_like(img[:,:,0])
@@ -128,11 +128,6 @@ def perception_step(Rover):
 
     pitch_thresh = 5.0
     pitch_thresh_inv = 360.0 - pitch_thresh
-    # if ((Rover.pitch >= pitch_thresh) & (Rover.pitch <= pitch_thresh_inv)) or ((Rover.roll >= pitch_thresh) & \
-    # (Rover.roll <= pitch_thresh_inv)):
-    #     Rover.vision_image = np.zeros_like(img)
-    #     print('Rover roll, pitch = ', (Rover.roll, Rover.pitch))
-    #     return Rover
 
     if (pitch_thresh <= Rover.pitch <= pitch_thresh_inv) or (pitch_thresh <= Rover.roll <= pitch_thresh_inv):
         Rover.vision_image = np.zeros_like(img)
@@ -162,11 +157,8 @@ def perception_step(Rover):
     obsticle_threshed = ~navigable_threshed
 
     # Use only the left half of the image since we are hugging the left wall, we want to ignore rocks on the right.
-    rock_threshed[:, int(rock_threshed.shape[1] * 0.6)] = 0
+    rock_threshed[:, int(rock_threshed.shape[1] * 0.5)] = 0
 
-    robot_arm_threshed = color_range(img, Rover.robot_arm_thresh_bottom, Rover.robot_arm_thresh_top)
-    if np.count_nonzero(robot_arm_threshed) > 100 and Rover.picking_up and not Rover.pickup_confirmed:
-        Rover.pickup_confirmed = True
     # 4) Update Rover.vision_image (this will be displayed on left side of screen)
         # Example: Rover.vision_image[:,:,0] = obstacle color-thresholded binary image
         #          Rover.vision_image[:,:,1] = rock_sample color-thresholded binary image
@@ -178,21 +170,21 @@ def perception_step(Rover):
     navigable_xpix, navigable_ypix = rover_coords(navigable_threshed)
     rock_xpix, rock_ypix = rover_coords(rock_threshed)
     obsticle_xpix, obsticle_ypix = rover_coords(obsticle_threshed)
-    
-    min_distance = 10
+
     max_distance = 50
-    distances = np.sqrt(navigable_xpix**2 + navigable_ypix**2)
-    good_navigable = (distances < max_distance) & (distances > min_distance)
+    max_rock_distance = 40
+    good_navigable = np.sqrt(navigable_xpix ** 2 + navigable_ypix ** 2) < max_distance
     good_navigable_x = navigable_xpix[good_navigable]
     good_navigable_y = navigable_ypix[good_navigable]
     
-    good_rock = np.sqrt(rock_xpix**2 + rock_ypix**2) < 40
+    good_rock = np.sqrt(rock_xpix**2 + rock_ypix**2) < max_rock_distance
     good_rock_x = rock_xpix[good_rock]
     good_rock_y = rock_ypix[good_rock]
     
     good_obsticle = np.sqrt(obsticle_xpix**2 + obsticle_ypix**2) < max_distance
     good_obsticle_x = obsticle_xpix[good_obsticle]
     good_obsticle_y = obsticle_ypix[good_obsticle]
+
     # 6) Convert rover-centric pixel values to world coordinates
     scale = 2 * dst_size
     navigable_xpix_world, navigable_ypix_world = pix_to_world(good_navigable_x,
